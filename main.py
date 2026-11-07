@@ -224,6 +224,46 @@ class Driver:
                 f"{'BRAKE' if 's' in keys else 'throttle' if 'w' in keys else 'coast'}"), result
 
 
+
+class LapDetector:
+    """Experimental visual checkpoint timer; arm while stationary at the start/finish line."""
+    def __init__(self):
+        self.reference = None
+        self.started = None
+        self.matches = 0
+        self.minimum_lap_seconds = 25.0
+
+    @staticmethod
+    def signature(frame):
+        h, w = frame.shape[:2]
+        # Central scene crop avoids most HUD elements and uses a compact fingerprint.
+        crop = frame[int(h * .22):int(h * .82), int(w * .20):int(w * .80)]
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        return cv2.resize(gray, (160, 90), interpolation=cv2.INTER_AREA)
+
+    def arm(self, frame):
+        self.reference = self.signature(frame)
+        self.started = time.monotonic()
+        self.matches = 0
+
+    def update(self, frame):
+        if self.reference is None or self.started is None:
+            return None
+        elapsed = time.monotonic() - self.started
+        if elapsed < self.minimum_lap_seconds:
+            return None
+        current = self.signature(frame)
+        difference = float(np.mean(cv2.absdiff(self.reference, current)))
+        # Require consecutive similar frames to reduce one-frame false positives.
+        self.matches = self.matches + 1 if difference < 10.0 else 0
+        if self.matches >= 5:
+            self.reference = current
+            self.started = time.monotonic()
+            self.matches = 0
+            return elapsed
+        return None
+
+
 class App:
     def __init__(self, root):
         self.root = root
@@ -235,7 +275,8 @@ class App:
         self.stop_event = threading.Event()
         self.latest = None
         self.latest_result = None
-        self.lap_started = None
+        self.lap_detector = LapDetector()
+        self.last_capture_frame = None
         self.status = tk.StringVar(value="Stopped — observe-only")
         self.metrics = tk.StringVar(value=self.metrics_text())
         self._build()
@@ -266,7 +307,7 @@ class App:
         ttk.Button(controls, text="Mark lap (F6)", command=self.mark_lap).pack(side="left", padx=7)
         ttk.Button(controls, text="Record incident (F7)", command=self.record_incident).pack(side="left", padx=7)
         ttk.Button(controls, text="STOP (F8)", command=self.stop).pack(side="right")
-        ttk.Label(outer, text="Safety: keep Roblox visible. Control is active only while a Roblox window is focused. F8 releases all keys.").pack(anchor="w", pady=(10, 0))
+        ttk.Label(outer, text="F6: arm visual lap checkpoint at the start/finish line. F8: emergency stop.").pack(anchor="w", pady=(10, 0))
 
     def start_observing(self):
         if self.driver.running:
@@ -287,16 +328,11 @@ class App:
         self.status.set("Autopilot enabled — F8 stops immediately")
 
     def mark_lap(self):
-        now = time.monotonic()
-        if self.lap_started is None:
-            self.lap_started = now
-            self.status.set("Lap timer started — press F6 again at the finish line")
+        if self.latest is None:
+            self.status.set("Start observing first, then press F6 at the start/finish line")
             return
-        seconds = now - self.lap_started
-        self.lap_started = now
-        self.learner.lap(seconds)
-        self.metrics.set(self.metrics_text())
-        self.status.set(f"Lap recorded: {seconds:.3f}s — best: {self.learner.data.get('best_time')}s")
+        self.lap_detector.arm(self.latest.copy())
+        self.status.set("Visual lap checkpoint armed — drive across the line; timing is experimental")
 
     def record_incident(self):
         detail = self.status.get()
@@ -322,7 +358,14 @@ class App:
                     message, result = self.driver.step(small) if self.driver.running else ("Stopped", None)
                     self.latest = cv2.resize(small, (800, 450), interpolation=cv2.INTER_AREA)
                     self.latest_result = result
-                    self.root.after(0, lambda m=message: self.status.set(m))
+                    lap_seconds = self.lap_detector.update(small)
+                    if lap_seconds is not None:
+                        self.learner.lap(lap_seconds)
+                        summary = f"Visual lap detected: {lap_seconds:.2f}s"
+                        self.root.after(0, lambda: self.metrics.set(self.metrics_text()))
+                        self.root.after(0, lambda m=summary: self.status.set(m))
+                    else:
+                        self.root.after(0, lambda m=message: self.status.set(m))
                 except Exception as exc:
                     self.root.after(0, lambda e=str(exc): self.status.set(f"Capture error: {e}"))
                     self.driver.release()
