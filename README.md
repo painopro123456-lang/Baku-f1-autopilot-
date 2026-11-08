@@ -33,7 +33,7 @@ This is still a visual heuristic, not a trained racing agent or game integration
 3. Run `python main.py`.
 4. Open Roblox and put the car on track.
 5. Start observing and verify the preview and confidence readout.
-6. From the pit lane, use **Pit exit mode**. It caps throttle at 32% and softens steering; it does not identify the pit-exit line automatically.
+6. From the pit lane, use **Pit exit mode**. It uses normal controller throttle and steering; the game's 80 km/h pit limiter handles pit-lane speed. The app does not identify the pit-exit line automatically.
 7. Once the car is fully on the racing circuit, press F10 to switch to normal race mode. F8 is the global emergency stop. At the start/finish line, press F6 once to arm the visual checkpoint; the app will try to record each return automatically; F7 to save an incident.
 
 ## Build
