@@ -351,7 +351,7 @@ class App:
         controls.pack(fill="x")
         ttk.Button(controls, text="Start observing", command=self.start_observing).pack(side="left", padx=(0, 7))
         ttk.Button(controls, text="Pit exit mode", command=self.begin_pit_exit).pack(side="left", padx=7)
-        ttk.Button(controls, text="Enable race mode", command=self.enable).pack(side="left", padx=7)
+        ttk.Button(controls, text="Enable race mode", command=self.begin_race_mode).pack(side="left", padx=7)
         ttk.Button(controls, text="Mark lap (F6)", command=self.mark_lap).pack(side="left", padx=7)
         ttk.Button(controls, text="Record incident (F7)", command=self.record_incident).pack(side="left", padx=7)
         ttk.Button(controls, text="STOP (F8)", command=self.stop).pack(side="right")
@@ -411,6 +411,18 @@ class App:
         self.driver.ready_frames = 0
         self.driver.release()
         self.status.set("RACE MODE — normal adaptive controls; stabilizing vision")
+
+    def begin_race_mode(self):
+        # This button is an explicit command, never a toggle: clicking it while
+        # pit-exit mode is active must switch modes, not accidentally disable driving.
+        if not self.driver.running:
+            self.start_observing()
+        self.driver.enabled = True
+        self.driver.pit_exit_mode = False
+        self.driver.ready_frames = 0
+        self.driver.release()
+        self.status.set("RACE MODE ARMED — returning focus to Roblox; waiting for confident road detection")
+        self.root.after(900, self.root.iconify)
 
     def enable(self):
         if not self.driver.running:
