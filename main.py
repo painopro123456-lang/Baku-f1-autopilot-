@@ -131,7 +131,14 @@ class Vision:
         now = time.monotonic()
         flow = 0.0
         if self.last_frame_gray is not None:
-            flow = float(np.mean(cv2.absdiff(gray, self.last_frame_gray))) / 35.0
+            vectors = cv2.calcOpticalFlowFarneback(
+                self.last_frame_gray, gray, None,
+                pyr_scale=0.5, levels=3, winsize=15,
+                iterations=3, poly_n=5, poly_sigma=1.2, flags=0
+            )
+            magnitude = cv2.magnitude(vectors[..., 0], vectors[..., 1])
+            # Relative pixel motion only; never presented as calibrated vehicle speed.
+            flow = float(np.mean(magnitude)) / 12.0
         self.last_frame_gray = gray
         self.last_time = now
         return {
@@ -177,12 +184,16 @@ class Driver:
         if not self.game_is_focused():
             self.release()
             return False
-        for key in self.last_keys - keys:
-            pyautogui.keyUp(key)
-        for key in keys - self.last_keys:
-            pyautogui.keyDown(key)
-        self.last_keys = set(keys)
-        return True
+        try:
+            for key in self.last_keys - keys:
+                pyautogui.keyUp(key)
+            for key in keys - self.last_keys:
+                pyautogui.keyDown(key)
+            self.last_keys = set(keys)
+            return True
+        except Exception:
+            self.release()
+            return False
 
     def step(self, frame):
         result = self.vision.analyze(frame)
