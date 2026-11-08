@@ -191,9 +191,40 @@ class Driver:
         self.pit_exit_mode = False
 
     def game_is_focused(self):
+        """Check the foreground window's owning executable, not its caption.
+        Roblox captions vary between the web client, Microsoft Store client,
+        and game experiences; title matching caused false 'not focused' states.
+        """
         try:
-            title = gw.getActiveWindowTitle() or ""
-            return "roblox" in title.lower()
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetForegroundWindow()
+            if not hwnd:
+                return False
+            # Resolve the root window in case the focused surface is a child.
+            GA_ROOT = 2
+            root_hwnd = user32.GetAncestor(hwnd, GA_ROOT) or hwnd
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(root_hwnd, ctypes.byref(pid))
+            if not pid.value:
+                return False
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+            if not handle:
+                return False
+            try:
+                size = wintypes.DWORD(32768)
+                buffer = ctypes.create_unicode_buffer(size.value)
+                if not kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+                    return False
+                executable = os.path.basename(buffer.value).lower()
+                return executable in {
+                    "robloxplayerbeta.exe",
+                    "robloxplayer.exe",
+                    "roblox.exe",
+                }
+            finally:
+                kernel32.CloseHandle(handle)
         except Exception:
             return False
 
