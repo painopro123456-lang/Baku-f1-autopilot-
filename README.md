@@ -11,14 +11,17 @@ Windows screen-based driving assistant for Roblox Formula Apex Racing.
 
 ## Current controller
 - Captures the monitor live; no screenshot upload is required.
-- Uses multi-slice road-corridor vision, temporal steering control, and a curvature/offset-based throttle and braking heuristic.
+- Uses multi-slice road-corridor vision with an adaptive, bounded PID-style steering controller.
+- Adds smoothed steering, bend feed-forward, relative optical-flow estimation, conservative corner braking, and line-recovery braking.
+- Enforces mutually exclusive throttle/brake requests and releases controls when road confidence is too low.
+- Adds automated controller safety tests to the Windows build pipeline.
 - Reduces analysis resolution to limit CPU use.
 - Sends keyboard input only while a Roblox window is the foreground window.
 - F8 is the emergency stop. F6 starts/records lap times manually. F7 records a user-reported incident.
 - Saves lap times, best time, events, and bounded controller tuning values in `%APPDATA%/BakuAutopilot/learning.json`.
 
 ## Important limitations
-This is still a visual heuristic, not a trained racing agent or game integration. Road segmentation can mistake shadows, walls, kerbs, or scenery for asphalt. The controller does not read actual speed, gear, steering angle, damage, track position, or the game's lap counter. Braking is estimated from visible road curvature and offset; it is not calibrated to the Rouiller's physics. Lap timing is manual with F6. Visual lap detection is experimental and can miss the line or trigger on a similar-looking scene; verify every recorded time. The app does not automatically identify crashes or read actual speed/gear telemetry, and saved incident reports are user-entered. Test in a private session, observe first, and keep F8 available. No fast or crash-free lap is guaranteed.
+This is still a visual heuristic, not a trained racing agent or game integration. Road segmentation can mistake shadows, walls, kerbs, or scenery for asphalt. The controller does not read actual speed, gear, steering angle, damage, track position, or the game's lap counter. Braking is estimated from visible road curvature, lateral offset, and relative optical flow; optical flow is not a real speed reading and the braking thresholds are not calibrated to the Rouiller's physics. The controller has not yet been validated on live Baku footage. Lap timing is manual with F6. Visual lap detection is experimental and can miss the line or trigger on a similar-looking scene; verify every recorded time. The app does not automatically identify crashes or read actual speed/gear telemetry, and saved incident reports are user-entered. Test in a private session, observe first, and keep F8 available. No fully autonomous, fast, or crash-free lap is guaranteed. Test in observe-only mode first and use a private server; this controller is experimental and may misread scenery as track.
 
 ## Run
 1. Install Python 3.11 on Windows.
