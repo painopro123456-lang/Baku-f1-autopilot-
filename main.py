@@ -315,7 +315,6 @@ class App:
         self.hotkey_listener = None
         self._build()
         self.root.bind("<F8>", lambda _e: self.stop())
-        self.root.bind("<F9>", lambda _e: self.enable())
         self.root.bind("<F10>", lambda _e: self.switch_to_race())
         self._start_global_hotkeys()
         self.root.bind("<F6>", lambda _e: self.mark_lap())
@@ -359,13 +358,11 @@ class App:
         ttk.Label(outer, text="F6: lap checkpoint • F8: emergency stop • F9: toggle autopilot • F10: switch pit exit to race mode").pack(anchor="w", pady=(4, 0))
 
     def _start_global_hotkeys(self):
-        # Global F8 works even while Roblox has focus; F9 toggles driving.
+        # Global F8 works even while Roblox has focus.
         def on_press(key):
             try:
                 if key == global_keyboard.Key.f8:
                     self.root.after(0, self.stop)
-                elif key == global_keyboard.Key.f9:
-                    self.root.after(0, self.enable)
                 elif key == global_keyboard.Key.f10:
                     self.root.after(0, self.switch_to_race)
             except RuntimeError:
