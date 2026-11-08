@@ -359,6 +359,8 @@ class App:
                     self.root.after(0, self.stop)
                 elif key == global_keyboard.Key.f9:
                     self.root.after(0, self.enable)
+                elif key == global_keyboard.Key.f10:
+                    self.root.after(0, self.switch_to_race)
             except RuntimeError:
                 return False
         try:
