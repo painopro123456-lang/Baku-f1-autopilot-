@@ -169,6 +169,7 @@ class Driver:
         self.target_title = "Roblox"
         self.last_output = None
         self.ready_frames = 0
+        self.pit_exit_mode = False
 
     def game_is_focused(self):
         try:
@@ -225,13 +226,15 @@ class Driver:
                 return "Roblox not focused — keys released", result
 
             keys = set()
-            if output.steering > 0.13:
+            steering = output.steering * (0.65 if self.pit_exit_mode else 1.0)
+            throttle = min(output.throttle, 0.32) if self.pit_exit_mode else output.throttle
+            if steering > 0.13:
                 keys.add("d")
-            elif output.steering < -0.13:
+            elif steering < -0.13:
                 keys.add("a")
             if output.brake >= 0.18:
                 keys.add("s")
-            elif output.throttle >= 0.18:
+            elif throttle >= 0.18:
                 keys.add("w")
             if not self.set_keys(keys):
                 return "Roblox not focused — keys released", result
@@ -307,6 +310,7 @@ class App:
         self._build()
         self.root.bind("<F8>", lambda _e: self.stop())
         self.root.bind("<F9>", lambda _e: self.enable())
+        self.root.bind("<F10>", lambda _e: self.switch_to_race())
         self._start_global_hotkeys()
         self.root.bind("<F6>", lambda _e: self.mark_lap())
         self.root.bind("<F7>", lambda _e: self.record_incident())
@@ -340,11 +344,12 @@ class App:
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
         ttk.Button(controls, text="Start observing", command=self.start_observing).pack(side="left", padx=(0, 7))
-        ttk.Button(controls, text="Enable autopilot", command=self.enable).pack(side="left", padx=7)
+        ttk.Button(controls, text="Pit exit mode", command=self.begin_pit_exit).pack(side="left", padx=7)
+        ttk.Button(controls, text="Enable race mode", command=self.enable).pack(side="left", padx=7)
         ttk.Button(controls, text="Mark lap (F6)", command=self.mark_lap).pack(side="left", padx=7)
         ttk.Button(controls, text="Record incident (F7)", command=self.record_incident).pack(side="left", padx=7)
         ttk.Button(controls, text="STOP (F8)", command=self.stop).pack(side="right")
-        ttk.Label(outer, text="F6: arm lap checkpoint • F8: GLOBAL emergency stop • F9: enable autopilot").pack(anchor="w", pady=(10, 0))
+        ttk.Label(outer, text="F6: lap checkpoint • F8: emergency stop • F9: toggle race mode • F10: switch pit exit to race mode").pack(anchor="w", pady=(10, 0))
 
     def _start_global_hotkeys(self):
         # Global F8 works even while Roblox has focus; F9 toggles driving.
@@ -380,6 +385,24 @@ class App:
         threading.Thread(target=self.capture_loop, daemon=True).start()
         self.status.set("Observing only — verify the preview and road detection before enabling")
 
+    def begin_pit_exit(self):
+        if not self.driver.running:
+            self.start_observing()
+        self.driver.pit_exit_mode = True
+        self.driver.enabled = True
+        self.driver.ready_frames = 0
+        self.status.set("PIT EXIT MODE — low throttle cap; press F10 once fully on track")
+        self.root.after(900, self.root.iconify)
+
+    def switch_to_race(self):
+        if not self.driver.enabled:
+            self.status.set("Autopilot is not active — start pit exit or race mode first")
+            return
+        self.driver.pit_exit_mode = False
+        self.driver.ready_frames = 0
+        self.driver.release()
+        self.status.set("RACE MODE — normal adaptive controls; stabilizing vision")
+
     def enable(self):
         if not self.driver.running:
             self.start_observing()
@@ -390,6 +413,7 @@ class App:
             self.status.set("Autopilot disabled — observing only")
             return
         self.driver.enabled = True
+        self.driver.pit_exit_mode = False
         self.driver.ready_frames = 0
         self.status.set("Autopilot armed — switching to Roblox; controls only engage when Roblox is foreground")
         # Minimize the dashboard so Roblox can receive focus. The capture loop
@@ -412,6 +436,7 @@ class App:
         self.driver.enabled = False
         self.driver.running = False
         self.driver.ready_frames = 0
+        self.driver.pit_exit_mode = False
         self.stop_event.set()
         self.driver.release()
         self.driver.controller.reset()
