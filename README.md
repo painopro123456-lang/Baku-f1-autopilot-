@@ -17,7 +17,7 @@ Windows screen-based driving assistant for Roblox Formula Apex Racing.
 - Adds automated controller safety tests to the Windows build pipeline.
 - Reduces analysis resolution to limit CPU use.
 - Sends keyboard input only while a Roblox window is the foreground window.
-- F8 is a global emergency stop (works while Roblox is focused); F9 toggles normal race mode; F10 switches from pit-exit mode to normal race mode. F6 arms the experimental visual lap checkpoint; F7 records a user-reported incident.
+- F8 is a global emergency stop (works while Roblox is focused); F10 switches from pit-exit mode to normal race mode. F9 is unused because Roblox uses it for the developer console. F6 arms the experimental visual lap checkpoint; F7 records a user-reported incident.
 - Enabling autopilot minimizes the dashboard to hand focus back to Roblox. Keyboard input is sent only while a Roblox window is foreground; otherwise all controls are released.
 - Live telemetry displays vision confidence, track offset, estimated curvature, steering, throttle, and brake requests.
 - Steering response and throttle limit can be adjusted from the dashboard and are saved between launches.
