@@ -349,10 +349,13 @@ class App:
     def _start_global_hotkeys(self):
         # Global F8 works even while Roblox has focus; F9 toggles driving.
         def on_press(key):
-            if key == global_keyboard.Key.f8:
-                self.root.after(0, self.stop)
-            elif key == global_keyboard.Key.f9:
-                self.root.after(0, self.enable)
+            try:
+                if key == global_keyboard.Key.f8:
+                    self.root.after(0, self.stop)
+                elif key == global_keyboard.Key.f9:
+                    self.root.after(0, self.enable)
+            except RuntimeError:
+                return False
         try:
             self.hotkey_listener = global_keyboard.Listener(on_press=on_press)
             self.hotkey_listener.daemon = True
@@ -382,6 +385,7 @@ class App:
             self.start_observing()
         if self.driver.enabled:
             self.driver.enabled = False
+            self.driver.ready_frames = 0
             self.driver.release()
             self.status.set("Autopilot disabled — observing only")
             return
@@ -407,6 +411,7 @@ class App:
     def stop(self):
         self.driver.enabled = False
         self.driver.running = False
+        self.driver.ready_frames = 0
         self.stop_event.set()
         self.driver.release()
         self.driver.controller.reset()
@@ -458,6 +463,10 @@ class App:
                         self.root.after(0, lambda m=message: self.status.set(m))
                 except Exception as exc:
                     self.root.after(0, lambda e=str(exc): self.status.set(f"Capture error: {e}"))
+                    self.driver.enabled = False
+                    self.driver.running = False
+                    self.driver.ready_frames = 0
+                    self.stop_event.set()
                     self.driver.release()
                     break
                 time.sleep(.07)
