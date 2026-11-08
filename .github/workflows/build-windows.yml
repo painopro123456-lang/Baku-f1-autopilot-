@@ -10,7 +10,7 @@ on:
       - ".github/workflows/build-windows.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: baku-autopilot-windows-${{ github.ref }}
@@ -37,6 +37,16 @@ jobs:
         run: pyinstaller --noconfirm --clean --windowed --name BakuAutopilotFolder --collect-all cv2 --collect-all mss --collect-all pygetwindow --collect-all pynput main.py
       - name: Package portable folder
         run: Compress-Archive -Path dist/BakuAutopilotFolder/* -DestinationPath BakuAutopilot-Portable-Windows.zip
+      - name: Publish direct Windows EXE release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Baku Autopilot build ${{ github.run_number }}
+          files: dist/BakuAutopilot.exe
+          generate_release_notes: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: BakuAutopilot-Windows
