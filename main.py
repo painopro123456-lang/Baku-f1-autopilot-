@@ -168,6 +168,7 @@ class Driver:
         self.last_message = "Stopped — observe-only"
         self.target_title = "Roblox"
         self.last_output = None
+        self.ready_frames = 0
 
     def game_is_focused(self):
         try:
@@ -208,6 +209,16 @@ class Driver:
             return f"Road unclear ({output.confidence:.2f}) — controls released", result
 
         if self.enabled:
+            # Require several stable, confident frames before the first key press.
+            if output.confidence < 0.35:
+                self.ready_frames = 0
+                self.release()
+                return "Road confidence too low — waiting safely", result
+            self.ready_frames += 1
+            if self.ready_frames < 5:
+                self.release()
+                return f"Stabilizing road detection ({self.ready_frames}/5)", result
+
             # Fail closed: only send keys while the Roblox game is foreground.
             if not self.game_is_focused():
                 self.release()
@@ -375,6 +386,7 @@ class App:
             self.status.set("Autopilot disabled — observing only")
             return
         self.driver.enabled = True
+        self.driver.ready_frames = 0
         self.status.set("Autopilot armed — switching to Roblox; controls only engage when Roblox is foreground")
         # Minimize the dashboard so Roblox can receive focus. The capture loop
         # continues; it sends no keys unless the Roblox window is active.
