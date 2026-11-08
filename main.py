@@ -226,8 +226,9 @@ class Driver:
                 return "Roblox not focused — keys released", result
 
             keys = set()
-            steering = output.steering * (0.65 if self.pit_exit_mode else 1.0)
-            throttle = min(output.throttle, 0.32) if self.pit_exit_mode else output.throttle
+            # Pit limiter is enforced by the game; keep the normal controller output.
+            steering = output.steering
+            throttle = output.throttle
             if steering > 0.13:
                 keys.add("d")
             elif steering < -0.13:
