@@ -203,7 +203,12 @@ class Driver:
 
     def step(self, frame):
         result = self.vision.analyze(frame)
-        output = self.controller.update(result, self.learner.data)
+        settings = dict(self.learner.data)
+        # Pit exit uses the game's own limiter; do not impose an artificial throttle cap.
+        # The controller still reduces throttle / brakes when the detected road bends.
+        if self.pit_exit_mode:
+            settings["throttle_limit"] = 1.0
+        output = self.controller.update(result, settings)
         self.last_output = output
         if output.mode.startswith("VISION LOST"):
             self.release()
@@ -350,7 +355,8 @@ class App:
         ttk.Button(controls, text="Mark lap (F6)", command=self.mark_lap).pack(side="left", padx=7)
         ttk.Button(controls, text="Record incident (F7)", command=self.record_incident).pack(side="left", padx=7)
         ttk.Button(controls, text="STOP (F8)", command=self.stop).pack(side="right")
-        ttk.Label(outer, text="F6: lap checkpoint • F8: emergency stop • F9: toggle race mode • F10: switch pit exit to race mode").pack(anchor="w", pady=(10, 0))
+        ttk.Label(outer, text="Pit exit route: drive forward from garage → sharp left → pit lane → sharp left at pit-lane end. F10 switches to race mode once on track.").pack(anchor="w", pady=(10, 0))
+        ttk.Label(outer, text="F6: lap checkpoint • F8: emergency stop • F9: toggle autopilot • F10: switch pit exit to race mode").pack(anchor="w", pady=(4, 0))
 
     def _start_global_hotkeys(self):
         # Global F8 works even while Roblox has focus; F9 toggles driving.
@@ -394,7 +400,7 @@ class App:
         self.driver.pit_exit_mode = True
         self.driver.enabled = True
         self.driver.ready_frames = 0
-        self.status.set("PIT EXIT MODE — low throttle cap; press F10 once fully on track")
+        self.status.set("GARAGE → PIT EXIT: follow the road through both left turns; game pit limiter handles pit speed; F10 once on track")
         self.root.after(900, self.root.iconify)
 
     def switch_to_race(self):
