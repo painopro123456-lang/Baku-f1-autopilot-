@@ -15,6 +15,7 @@ import mss
 import numpy as np
 import pyautogui
 import pygetwindow as gw
+from pynput import keyboard as global_keyboard
 from PIL import Image, ImageTk
 from autopilot_core import AdaptiveController
 
@@ -155,6 +156,7 @@ class Driver:
         self.confidence_misses = 0
         self.last_message = "Stopped — observe-only"
         self.target_title = "Roblox"
+        self.last_output = None
 
     def game_is_focused(self):
         try:
@@ -185,6 +187,7 @@ class Driver:
     def step(self, frame):
         result = self.vision.analyze(frame)
         output = self.controller.update(result, self.learner.data)
+        self.last_output = output
         if output.mode.startswith("VISION LOST"):
             self.release()
             return f"Road unclear ({output.confidence:.2f}) — controls released", result
@@ -271,8 +274,14 @@ class App:
         self.last_capture_frame = None
         self.status = tk.StringVar(value="Stopped — observe-only")
         self.metrics = tk.StringVar(value=self.metrics_text())
+        self.live_telemetry = tk.StringVar(value="Waiting for live vision…")
+        self.steering_gain = tk.DoubleVar(value=float(self.learner.data.get("steer_gain", 0.78)))
+        self.throttle_limit = tk.DoubleVar(value=float(self.learner.data.get("throttle_limit", 0.82)))
+        self.hotkey_listener = None
         self._build()
         self.root.bind("<F8>", lambda _e: self.stop())
+        self.root.bind("<F9>", lambda _e: self.enable())
+        self._start_global_hotkeys()
         self.root.bind("<F6>", lambda _e: self.mark_lap())
         self.root.bind("<F7>", lambda _e: self.record_incident())
         self.root.protocol("WM_DELETE_WINDOW", self.close)
@@ -291,7 +300,17 @@ class App:
         self.preview = ttk.Label(outer, text="Live game preview will appear here", anchor="center")
         self.preview.pack(fill="both", expand=True)
         ttk.Label(outer, textvariable=self.status, wraplength=940).pack(anchor="w", pady=8)
+        ttk.Label(outer, textvariable=self.live_telemetry, wraplength=940).pack(anchor="w", pady=(0, 8))
         ttk.Label(outer, textvariable=self.metrics).pack(anchor="w", pady=(0, 8))
+        settings = ttk.LabelFrame(outer, text="Driving settings", padding=8)
+        settings.pack(fill="x", pady=(0, 8))
+        ttk.Label(settings, text="Steering response").grid(row=0, column=0, sticky="w")
+        ttk.Scale(settings, from_=0.40, to=1.15, variable=self.steering_gain,
+                  command=self.update_settings).grid(row=0, column=1, sticky="ew", padx=8)
+        ttk.Label(settings, text="Throttle limit").grid(row=1, column=0, sticky="w")
+        ttk.Scale(settings, from_=0.25, to=1.0, variable=self.throttle_limit,
+                  command=self.update_settings).grid(row=1, column=1, sticky="ew", padx=8)
+        settings.columnconfigure(1, weight=1)
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
         ttk.Button(controls, text="Start observing", command=self.start_observing).pack(side="left", padx=(0, 7))
@@ -299,7 +318,29 @@ class App:
         ttk.Button(controls, text="Mark lap (F6)", command=self.mark_lap).pack(side="left", padx=7)
         ttk.Button(controls, text="Record incident (F7)", command=self.record_incident).pack(side="left", padx=7)
         ttk.Button(controls, text="STOP (F8)", command=self.stop).pack(side="right")
-        ttk.Label(outer, text="F6: arm visual lap checkpoint at the start/finish line. F8: emergency stop.").pack(anchor="w", pady=(10, 0))
+        ttk.Label(outer, text="F6: arm lap checkpoint • F8: GLOBAL emergency stop • F9: enable autopilot").pack(anchor="w", pady=(10, 0))
+
+    def _start_global_hotkeys(self):
+        # Global F8 works even while Roblox has focus; F9 toggles driving.
+        def on_press(key):
+            if key == global_keyboard.Key.f8:
+                self.root.after(0, self.stop)
+            elif key == global_keyboard.Key.f9:
+                self.root.after(0, self.enable)
+        try:
+            self.hotkey_listener = global_keyboard.Listener(on_press=on_press)
+            self.hotkey_listener.daemon = True
+            self.hotkey_listener.start()
+        except Exception as exc:
+            self.status.set(f"Global hotkeys unavailable ({exc}); keep the app accessible")
+
+    def update_settings(self, _value=None):
+        self.learner.data["steer_gain"] = round(float(self.steering_gain.get()), 3)
+        self.learner.data["throttle_limit"] = round(float(self.throttle_limit.get()), 3)
+        try:
+            self.learner.save()
+        except OSError as exc:
+            self.status.set(f"Could not save settings: {exc}")
 
     def start_observing(self):
         if self.driver.running:
@@ -308,16 +349,21 @@ class App:
         self.driver.running = True
         self.driver.enabled = False
         threading.Thread(target=self.capture_loop, daemon=True).start()
-        self.status.set("Observing only — check that the preview shows the track")
+        self.status.set("Observing only — verify the preview and road detection before enabling")
 
     def enable(self):
         if not self.driver.running:
             self.start_observing()
-        if not self.driver.game_is_focused():
-            messagebox.showwarning("Roblox not focused", "Click the Roblox game window first, then enable autopilot.")
+        if self.driver.enabled:
+            self.driver.enabled = False
+            self.driver.release()
+            self.status.set("Autopilot disabled — observing only")
             return
         self.driver.enabled = True
-        self.status.set("Autopilot enabled — F8 stops immediately")
+        self.status.set("Autopilot armed — switching to Roblox; controls only engage when Roblox is foreground")
+        # Minimize the dashboard so Roblox can receive focus. The capture loop
+        # continues; it sends no keys unless the Roblox window is active.
+        self.root.after(900, self.root.iconify)
 
     def mark_lap(self):
         if self.latest is None:
@@ -351,6 +397,17 @@ class App:
                     message, result = self.driver.step(small) if self.driver.running else ("Stopped", None)
                     self.latest = cv2.resize(small, (800, 450), interpolation=cv2.INTER_AREA)
                     self.latest_result = result
+                    if result and result.get("valid"):
+                        out = self.driver.last_output
+                        telemetry = (f"Vision {result['confidence']:.0%}  |  "
+                                     f"Track offset {result['offset']:+.2f}  |  "
+                                     f"Curve {result['curvature']:+.2f}")
+                        if out:
+                            telemetry += (f"  |  Steering {out.steering:+.2f}  |  "
+                                          f"Throttle {out.throttle:.0%}  |  Brake {out.brake:.0%}")
+                        self.root.after(0, lambda m=telemetry: self.live_telemetry.set(m))
+                    else:
+                        self.root.after(0, lambda: self.live_telemetry.set("Road not confidently detected — inputs released"))
                     lap_seconds = self.lap_detector.update(small)
                     if lap_seconds is not None:
                         self.learner.lap(lap_seconds)
@@ -376,6 +433,11 @@ class App:
 
     def close(self):
         self.stop()
+        if self.hotkey_listener is not None:
+            try:
+                self.hotkey_listener.stop()
+            except Exception:
+                pass
         self.root.destroy()
 
 
