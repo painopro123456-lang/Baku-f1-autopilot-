@@ -84,14 +84,16 @@ class Vision:
     @staticmethod
     def _road_mask(roi):
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        # Broad asphalt cue. The connected-component and multi-slice checks below
-        # reject much of the sky/HUD, but this still needs calibration per graphics setting.
-        low_sat = cv2.inRange(hsv, np.array([0, 0, 32]), np.array([180, 105, 205]))
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        texture = cv2.Canny(gray, 35, 105)
-        mask = cv2.bitwise_and(low_sat, cv2.bitwise_not(texture))
-        kernel = np.ones((7, 7), np.uint8)
-        return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        # Keep textured asphalt: subtracting Canny edges fragmented the road
+        # and made detection disappear on several Roblox graphics settings.
+        neutral = cv2.inRange(hsv, np.array([0, 0, 24]), np.array([180, 125, 190]))
+        dark_asphalt = cv2.inRange(gray, 28, 178)
+        mask = cv2.bitwise_and(neutral, dark_asphalt)
+        close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 7))
+        open_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
+        return cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_kernel)
 
     def analyze(self, frame):
         h, w = frame.shape[:2]
@@ -107,22 +109,37 @@ class Vision:
             band = mask[max(0, y - 7):min(rh, y + 8), :]
             column_score = np.count_nonzero(band, axis=0).astype(np.float32)
             smooth = np.convolve(column_score, np.ones(19, dtype=np.float32), mode="same")
-            # Find the strongest broad region, then require plausible road width.
-            peak = int(np.argmax(smooth))
-            threshold = max(2.0, float(smooth[peak]) * .22)
-            left = peak
-            right = peak
-            while left > 0 and smooth[left - 1] >= threshold:
-                left -= 1
-            while right < rw - 1 and smooth[right + 1] >= threshold:
-                right += 1
-            width = right - left
-            score = float(smooth[peak] / 15.0)
-            if rw * .12 <= width <= rw * .94 and score >= 1.5:
-                centers.append((left + right) / 2)
-                widths.append(width)
-                scores.append(min(1.0, score / 12.0))
-                ys.append(fraction)
+            # Evaluate multiple spans and prefer the one that continues the
+            # road from the previous slice, rather than an isolated wall/kerb.
+            threshold = max(2.0, float(np.max(smooth)) * .24)
+            active = smooth >= threshold
+            edges = np.diff(np.pad(active.astype(np.int8), (1, 1)))
+            starts = np.where(edges == 1)[0]
+            ends = np.where(edges == -1)[0]
+            candidates = []
+            expected_center = centers[-1] if centers else rw / 2
+            expected_width = widths[-1] if widths else rw * .58
+            for left, right in zip(starts, ends):
+                width = int(right - left)
+                if not (rw * .16 <= width <= rw * .88):
+                    continue
+                peak = float(np.max(smooth[left:right])) if right > left else 0.0
+                if peak < 1.5:
+                    continue
+                center = (left + right) / 2.0
+                center_error = abs(center - expected_center) / max(1.0, rw * .45)
+                width_error = abs(width - expected_width) / max(1.0, expected_width)
+                evidence = min(1.0, peak / 12.0)
+                score = evidence - .34 * center_error - .20 * width_error
+                candidates.append((score, left, right))
+            if candidates:
+                score, left, right = max(candidates, key=lambda item: item[0])
+                width = right - left
+                if score > .12:
+                    centers.append((left + right) / 2.0)
+                    widths.append(width)
+                    scores.append(min(1.0, max(0.0, score)))
+                    ys.append(fraction)
         if len(centers) < 3:
             return {"valid": False, "confidence": 0.0, "centers": [], "curvature": 0.0,
                     "offset": 0.0, "preview": mask}
