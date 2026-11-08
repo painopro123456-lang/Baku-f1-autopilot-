@@ -30,7 +30,7 @@ jobs:
       - name: Build standalone executable
         run: pyinstaller --noconfirm --clean --onefile --windowed --name BakuAutopilot --collect-all cv2 --collect-all mss --collect-all pygetwindow --collect-all pynput main.py
       - name: Build portable folder
-        run: pyinstaller --noconfirm --clean --windowed --name BakuAutopilotFolder --collect-all cv2 --collect-all mss --collect-all pygetwindow main.py
+        run: pyinstaller --noconfirm --clean --windowed --name BakuAutopilotFolder --collect-all cv2 --collect-all mss --collect-all pygetwindow --collect-all pynput main.py
       - name: Package portable folder
         run: Compress-Archive -Path dist/BakuAutopilotFolder/* -DestinationPath BakuAutopilot-Portable-Windows.zip
       - uses: actions/upload-artifact@v4
