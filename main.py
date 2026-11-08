@@ -145,7 +145,7 @@ class Vision:
             "valid": True, "confidence": confidence, "centers": centers,
             "offset": float(np.clip(np.mean(offsets[-2:]), -1.0, 1.0)),
             "curvature": curvature, "flow": float(np.clip(flow, 0, 1)),
-            "preview": mask, "roi_x": (x0, x1), "roi_y": (y0, y1)
+            "preview": mask, "roi_x": (x0, x1), "roi_y": (y0, y1), "sample_y": ys
         }
 
 
@@ -406,7 +406,20 @@ class App:
                     # Analyze at a bounded resolution to reduce CPU use.
                     small = cv2.resize(frame, (960, 540), interpolation=cv2.INTER_AREA)
                     message, result = self.driver.step(small) if self.driver.running else ("Stopped", None)
-                    self.latest = cv2.resize(small, (800, 450), interpolation=cv2.INTER_AREA)
+                    display = small.copy()
+                    if result and result.get("valid"):
+                        x0, _x1 = result["roi_x"]
+                        y0, _y1 = result["roi_y"]
+                        points = [
+                            (int(x0 + cx), int(y0 + frac * (_y1 - y0)))
+                            for cx, frac in zip(result["centers"], result["sample_y"])
+                        ]
+                        if len(points) >= 2:
+                            cv2.polylines(display, [np.asarray(points, dtype=np.int32)],
+                                          False, (40, 220, 90), 3)
+                            for point in points:
+                                cv2.circle(display, point, 5, (30, 80, 255), -1)
+                    self.latest = cv2.resize(display, (800, 450), interpolation=cv2.INTER_AREA)
                     self.latest_result = result
                     if result and result.get("valid"):
                         out = self.driver.last_output
