@@ -17,7 +17,7 @@ Windows screen-based driving assistant for Roblox Formula Apex Racing.
 - Adds automated controller safety tests to the Windows build pipeline.
 - Reduces analysis resolution to limit CPU use.
 - Sends keyboard input only while a Roblox window is the foreground window.
-- F8 is a global emergency stop (works while Roblox is focused); F9 toggles autopilot. F6 arms the experimental visual lap checkpoint; F7 records a user-reported incident.
+- F8 is a global emergency stop (works while Roblox is focused); F9 toggles normal race mode; F10 switches from pit-exit mode to normal race mode. F6 arms the experimental visual lap checkpoint; F7 records a user-reported incident.
 - Enabling autopilot minimizes the dashboard to hand focus back to Roblox. Keyboard input is sent only while a Roblox window is foreground; otherwise all controls are released.
 - Live telemetry displays vision confidence, track offset, estimated curvature, steering, throttle, and brake requests.
 - Steering response and throttle limit can be adjusted from the dashboard and are saved between launches.
@@ -33,8 +33,8 @@ This is still a visual heuristic, not a trained racing agent or game integration
 3. Run `python main.py`.
 4. Open Roblox and put the car on track.
 5. Start observing and verify the preview and confidence readout.
-6. Enable autopilot; the dashboard minimizes so Roblox can receive focus. F9 toggles driving on/off.
-7. Press F8 at any time for the global emergency stop. At the start/finish line, press F6 once to arm the visual checkpoint; the app will try to record each return automatically; F7 to save an incident.
+6. From the pit lane, use **Pit exit mode**. It caps throttle at 32% and softens steering; it does not identify the pit-exit line automatically.
+7. Once the car is fully on the racing circuit, press F10 to switch to normal race mode. F8 is the global emergency stop. At the start/finish line, press F6 once to arm the visual checkpoint; the app will try to record each return automatically; F7 to save an incident.
 
 ## Build
 GitHub Actions builds a standalone Windows executable and a portable folder. Open **Actions → Build Windows app → latest successful run → Artifacts**.
