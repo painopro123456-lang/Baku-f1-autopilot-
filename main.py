@@ -16,6 +16,7 @@ import numpy as np
 import pyautogui
 import pygetwindow as gw
 from PIL import Image, ImageTk
+from autopilot_core import AdaptiveController
 
 APP_DIR = Path(os.getenv("APPDATA", str(Path.home()))) / "BakuAutopilot"
 APP_DIR.mkdir(parents=True, exist_ok=True)
@@ -144,6 +145,7 @@ class Driver:
     def __init__(self, learner):
         self.learner = learner
         self.vision = Vision()
+        self.controller = AdaptiveController()
         self.running = False
         self.enabled = False
         self.last_keys = set()
@@ -182,46 +184,36 @@ class Driver:
 
     def step(self, frame):
         result = self.vision.analyze(frame)
-        if not result["valid"] or result["confidence"] < .10:
-            self.confidence_misses += 1
+        output = self.controller.update(result, self.learner.data)
+        if output.mode.startswith("VISION LOST"):
             self.release()
-            return "Road unclear — keys released", result
-        self.confidence_misses = 0
-        error = result["offset"]
-        curve = result["curvature"]
-        now = time.monotonic()
-        dt = max(.02, min(.20, now - self.previous_time))
-        self.previous_time = now
-        self.integral = float(np.clip(self.integral + error * dt, -1.2, 1.2))
-        derivative = (error - self.previous_error) / dt
-        self.previous_error = error
-        d = self.learner.data
-        steer = (float(d["steer_gain"]) * error
-                 + float(d["integral_gain"]) * self.integral
-                 + float(d["derivative_gain"]) * derivative * .04
-                 + .30 * curve)
-        steer = float(np.clip(steer, -1.0, 1.0))
-        severity = min(1.0, abs(curve) * .75 + abs(error) * .55)
-        throttle = float(d.get("throttle_limit", .82)) * (1.0 - .62 * severity)
-        keys = set()
+            return f"Road unclear ({output.confidence:.2f}) — controls released", result
+
         if self.enabled:
-            # Fail closed: no input unless Roblox is the foreground window.
+            # Fail closed: only send keys while the Roblox game is foreground.
             if not self.game_is_focused():
                 self.release()
                 return "Roblox not focused — keys released", result
-            if steer > .12:
+
+            keys = set()
+            if output.steering > 0.13:
                 keys.add("d")
-            elif steer < -.12:
+            elif output.steering < -0.13:
                 keys.add("a")
-            if severity > .72:
+            if output.brake >= 0.18:
                 keys.add("s")
-            elif throttle > .15:
+            elif output.throttle >= 0.18:
                 keys.add("w")
             if not self.set_keys(keys):
                 return "Roblox not focused — keys released", result
-        return (f"Road {result['confidence']:.2f} | offset {error:+.2f} | "
-                f"curve {curve:+.2f} | steering {steer:+.2f} | "
-                f"{'BRAKE' if 's' in keys else 'throttle' if 'w' in keys else 'coast'}"), result
+        else:
+            keys = set()
+
+        return (
+            f"Road {output.confidence:.2f} | offset {result['offset']:+.2f} | "
+            f"curve {result['curvature']:+.2f} | steer {output.steering:+.2f} | "
+            f"relative-flow {self.controller.speed_proxy:.2f} | {output.mode}"
+        ), result
 
 
 
@@ -344,6 +336,7 @@ class App:
         self.driver.running = False
         self.stop_event.set()
         self.driver.release()
+        self.driver.controller.reset()
         self.status.set("Stopped — all keys released")
 
     def capture_loop(self):
