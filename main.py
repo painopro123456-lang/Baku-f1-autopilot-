@@ -57,14 +57,18 @@ class Learner:
         self.save()
 
     def lap(self, seconds):
-        entry = {"time": round(seconds, 3), "timestamp": time.time()}
+        entry = {
+            "time": round(seconds, 3),
+            "timestamp": time.time(),
+            "steer_gain": float(self.data.get("steer_gain", 0.78)),
+            "throttle_limit": float(self.data.get("throttle_limit", 0.82)),
+        }
         self.data["laps"].append(entry)
         self.data["laps"] = self.data["laps"][-100:]
         valid = [x["time"] for x in self.data["laps"] if x.get("time", 0) > 0]
         self.data["best_time"] = min(valid) if valid else None
-        # Small, bounded adjustments only. Actual driving quality still needs testing.
-        if len(valid) >= 2 and seconds < valid[-2]:
-            self.data["steer_gain"] = min(1.15, float(self.data["steer_gain"]) * 1.01)
+        # Do not auto-tune from lap time alone: a faster lap is not proof
+        # that a particular steering or throttle change caused the improvement.
         self.save()
 
 
