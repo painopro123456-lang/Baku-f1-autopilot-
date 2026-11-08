@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+import ctypes
+from ctypes import wintypes
 import os
 import threading
 import time
@@ -355,7 +357,8 @@ class App:
         ttk.Button(controls, text="Record incident (F7)", command=self.record_incident).pack(side="left", padx=7)
         ttk.Button(controls, text="STOP (F8)", command=self.stop).pack(side="right")
         ttk.Label(outer, text="Pit exit route: drive forward from garage → sharp left → pit lane → sharp left at pit-lane end. F10 switches to race mode once on track.").pack(anchor="w", pady=(10, 0))
-        ttk.Label(outer, text="F6: lap checkpoint • F8: emergency stop • F9: toggle autopilot • F10: switch pit exit to race mode").pack(anchor="w", pady=(4, 0))
+        ttk.Label(outer, text="F6: lap checkpoint • F8: emergency stop • F10: switch pit exit to race mode").pack(anchor="w", pady=(4, 0))
+        ttk.Label(outer, text="Capture source: Roblox game window only (windowed / borderless supported)").pack(anchor="w", pady=(4, 0))
 
     def _start_global_hotkeys(self):
         # Global F8 works even while Roblox has focus.
@@ -460,12 +463,69 @@ class App:
         self.driver.controller.reset()
         self.status.set("Stopped — all keys released")
 
+    @staticmethod
+    def roblox_client_region():
+        """Return the Roblox client-area rectangle in screen coordinates."""
+        user32 = ctypes.windll.user32
+        try:
+            user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", wintypes.LONG), ("top", wintypes.LONG),
+                ("right", wintypes.LONG), ("bottom", wintypes.LONG),
+            ]
+
+        candidates = []
+        for window in gw.getAllWindows():
+            if "roblox" not in (window.title or "").lower():
+                continue
+            hwnd = getattr(window, "_hWnd", None)
+            if not hwnd or user32.IsIconic(hwnd):
+                continue
+            rect = RECT()
+            if not user32.GetClientRect(hwnd, ctypes.byref(rect)):
+                continue
+            if rect.right - rect.left < 160 or rect.bottom - rect.top < 120:
+                continue
+            top_left = POINT(rect.left, rect.top)
+            bottom_right = POINT(rect.right, rect.bottom)
+            if not user32.ClientToScreen(hwnd, ctypes.byref(top_left)):
+                continue
+            if not user32.ClientToScreen(hwnd, ctypes.byref(bottom_right)):
+                continue
+            width = bottom_right.x - top_left.x
+            height = bottom_right.y - top_left.y
+            if width <= 0 or height <= 0:
+                continue
+            candidates.append({
+                "left": int(top_left.x), "top": int(top_left.y),
+                "width": int(width), "height": int(height),
+            })
+        if not candidates:
+            return None
+        return max(candidates, key=lambda r: r["width"] * r["height"])
+
     def capture_loop(self):
         with mss.mss() as sct:
-            monitor = sct.monitors[1]
             while not self.stop_event.is_set():
                 try:
-                    shot = np.asarray(sct.grab(monitor))
+                    region = self.roblox_client_region()
+                    if region is None:
+                        self.driver.release()
+                        self.driver.ready_frames = 0
+                        self.root.after(0, lambda: self.status.set(
+                            "Roblox window not found or minimized — waiting; no desktop capture"
+                        ))
+                        time.sleep(.25)
+                        continue
+                    # Capture only Roblox's client rectangle, never the full monitor.
+                    shot = np.asarray(sct.grab(region))
                     frame = cv2.cvtColor(shot, cv2.COLOR_BGRA2BGR)
                     # Analyze at a bounded resolution to reduce CPU use.
                     small = cv2.resize(frame, (960, 540), interpolation=cv2.INTER_AREA)
